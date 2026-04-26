@@ -14,9 +14,11 @@
 
 #include "rclcpp/rclcpp.hpp"
 
+#include <serial_driver/serial_driver.hpp>
+#include <iostream>
+
 namespace engineering_hardware
 {
-
     class EngineeringSystem : public hardware_interface::SystemInterface
     {
     public:
@@ -40,10 +42,32 @@ namespace engineering_hardware
           const rclcpp::Time & time,
           const rclcpp::Duration & period) override;
 
+        hardware_interface::CallbackReturn on_deactivate(
+            const rclcpp_lifecycle::State& previous_state) override;
+
+        void init_param();
+
+        void init_serial();
+
+        void serial_recv();
+
+        void bufferToFloatArray(const uint8_t* buffer, float* floatArray, size_t size);
+
+        std::vector<uint8_t> floatArrayToBuffer(const std::vector<float>& data);
     private:
         std::vector<double> hw_positions_;
         std::vector<double> hw_velocities_;
         std::vector<double> hw_commands_;
+
+        std::unique_ptr<IoContext> owned_ctx_;
+        std::string device_name_;
+        std::unique_ptr<drivers::serial_driver::SerialPortConfig> device_config_;
+        std::unique_ptr<drivers::serial_driver::SerialDriver> serial_driver_;
+
+        std::thread receive_thread_;
+        std::atomic<bool> running_{false};
+        std::mutex data_mutex_;
+
     };
 
 }

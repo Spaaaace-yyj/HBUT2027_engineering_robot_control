@@ -8,6 +8,12 @@
                 <!-- By default, set up controllers for simulation. This won't work on real hardware -->
 <!--                <plugin>mock_components/GenericSystem</plugin>-->
                 <plugin>engineering_hardware/EngineeringSystem</plugin>
+                <param name="device_name">/ttyACM0</param>
+                <param name="baud_rate">115200</param>
+                <param name="fc_string">none</param>
+                <param name="pt_string">none</param>
+                <param name="sb_string">1</param>
+
             </hardware>
             <joint name="joint0">
                 <command_interface name="position"/>
