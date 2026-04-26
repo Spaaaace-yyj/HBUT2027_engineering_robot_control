@@ -1,0 +1,7 @@
+<library path="engineering_hardware">
+    <class
+            name="engineering_hardware/EngineeringSystem"
+            type="engineering_hardware::EngineeringSystem"
+            base_class_type="hardware_interface::SystemInterface">
+    </class>
+</library>
