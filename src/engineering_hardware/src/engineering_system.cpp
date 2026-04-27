@@ -9,6 +9,10 @@ using namespace engineering_hardware;
 hardware_interface::CallbackReturn EngineeringSystem::on_init(
   const hardware_interface::HardwareInfo & info)
 {
+    node_ = std::make_shared<rclcpp::Node>("engineering_hw_node");
+
+    debug_pub_ = node_->create_publisher<auto_aim_interfaces::msg::RobotArmDebug>("/hw_debug", 10);
+
     if (hardware_interface::SystemInterface::on_init(info) !=
         hardware_interface::CallbackReturn::SUCCESS)
     {
@@ -16,8 +20,10 @@ hardware_interface::CallbackReturn EngineeringSystem::on_init(
     }
 
     hw_positions_.resize(info.joints.size(), 0.0);
-    hw_commands_.resize(info.joints.size(), 0.0);
     hw_velocities_.resize(info.joints.size(), 0.0);
+
+    hw_commands_positions_.resize(info.joints.size(), 0.0);
+    hw_commands_velocities_.resize(info.joints.size(), 0.0);
 
     init_param();
 
@@ -27,13 +33,21 @@ hardware_interface::CallbackReturn EngineeringSystem::on_init(
 hardware_interface::CallbackReturn EngineeringSystem::on_configure(
   const rclcpp_lifecycle::State &)
 {
+
     for (size_t i = 0; i < hw_positions_.size(); i++)
     {
         hw_positions_[i] = 0.0;
-        hw_commands_[i] = 0.0;
+        hw_commands_positions_[i] = 0.0;
+        hw_commands_velocities_[i] = 0.0;
     }
 
     init_serial();
+
+    ros_executor_ = std::make_shared<rclcpp::executors::SingleThreadedExecutor>();
+    ros_executor_->add_node(node_);
+    spin_thread_ = std::thread([this]() {
+        ros_executor_->spin();
+    });
 
     return hardware_interface::CallbackReturn::SUCCESS;
 }
@@ -57,9 +71,10 @@ EngineeringSystem::export_command_interfaces()
 {
     std::vector<hardware_interface::CommandInterface> commands;
 
-    for (size_t i = 0; i < hw_commands_.size(); i++)
+    for (size_t i = 0; i < hw_commands_positions_.size(); i++)
     {
-        commands.emplace_back(info_.joints[i].name, hardware_interface::HW_IF_POSITION, &hw_commands_[i]);
+        commands.emplace_back(info_.joints[i].name, hardware_interface::HW_IF_POSITION, &hw_commands_positions_[i]);
+        commands.emplace_back(info_.joints[i].name, hardware_interface::HW_IF_VELOCITY, &hw_commands_velocities_[i]);
     }
 
     return commands;
@@ -70,7 +85,8 @@ hardware_interface::CallbackReturn EngineeringSystem::on_activate(
 {
     for (size_t i = 0; i < hw_positions_.size(); i++)
     {
-        hw_commands_[i] = hw_positions_[i];
+        hw_commands_positions_[i] = hw_positions_[i];
+        hw_commands_velocities_[i] = hw_velocities_[i];
     }
 
 
@@ -86,6 +102,16 @@ hardware_interface::CallbackReturn EngineeringSystem::on_deactivate(
         receive_thread_.join();
     }
 
+    if (ros_executor_)
+    {
+        ros_executor_->cancel();
+    }
+
+    if (spin_thread_.joinable())
+    {
+        spin_thread_.join();
+    }
+
     return hardware_interface::CallbackReturn::SUCCESS;
 }
 
@@ -96,8 +122,8 @@ hardware_interface::return_type EngineeringSystem::read(
 {
     for (size_t i = 0; i < hw_positions_.size(); i++)
     {
-        hw_velocities_[i] = hw_commands_[i] - hw_positions_[i];
-        hw_positions_[i] = hw_commands_[i];
+        hw_velocities_[i] = hw_commands_velocities_[i];
+        hw_positions_[i] = hw_commands_positions_[i];
     }
 
     return hardware_interface::return_type::OK;
@@ -110,25 +136,33 @@ hardware_interface::return_type EngineeringSystem::write(
 {
     size_t size = 5 * sizeof(float);
     std::vector<uint8_t> buffer(size);
-    std::vector<float> send_float(hw_commands_.size());
-    for (size_t i = 0; i < hw_commands_.size(); i++)
+    std::vector<float> send_float(hw_commands_positions_.size());
+    auto_aim_interfaces::msg::RobotArmDebug debug_msg;
+    for (size_t i = 0; i < hw_commands_positions_.size(); i++)
     {
-        RCLCPP_INFO(rclcpp::get_logger("hardware"),
-                    "joint %ld cmd: %f", i, hw_commands_[i]);
-        send_float[i] = hw_commands_[i];
-
+        // RCLCPP_INFO(rclcpp::get_logger("hardware"),
+        //             "joint %ld cmd: %f", i, hw_commands_[i]);
+        send_float[i] = hw_commands_positions_[i];
+        debug_msg.joint.push_back(hw_commands_positions_[i]);
+        debug_msg.joint_v.push_back(hw_commands_velocities_[i]);
     }
+    send_float[0] *= -1.0f;
+    send_float[4] *= -1.0f;
+    debug_msg.joint[4] *= -1.0f;
+    debug_msg.joint[0] *= -1.0f;
     buffer = floatArrayToBuffer(send_float);
 
     std::stringstream ss;
-    for (size_t i = 0; i < 5 * sizeof(float); ++i)
-    {
-        ss << std::hex << std::setw(2) << std::setfill('0')
-           << static_cast<int>(buffer[i]) << " ";
-    }
-    RCLCPP_INFO(rclcpp::get_logger("buffer"), "%s", ss.str().c_str());
+    // for (size_t i = 0; i < 5 * sizeof(float); ++i)
+    // {
+    //     ss << std::hex << std::setw(2) << std::setfill('0')
+    //        << static_cast<int>(buffer[i]) << " ";
+    // }
+    // RCLCPP_INFO(rclcpp::get_logger("buffer"), "%s", ss.str().c_str());
 
-    if (serial_driver_->port()->is_open())
+    debug_pub_->publish(debug_msg);
+
+    if (serial_driver_->port()->is_open() && serial_driver_)
     {
         serial_driver_->port()->send(buffer);
 
@@ -276,12 +310,14 @@ void EngineeringSystem::init_serial()
             running_ = true;
             receive_thread_ = std::thread(&EngineeringSystem::serial_recv, this);
         }
+        RCLCPP_INFO(rclcpp::get_logger("lc_serial"), "success init serial %s", device_name_.c_str());
     }
     catch (const std::exception& ex)
     {
         RCLCPP_ERROR(rclcpp::get_logger("lc_serial"), "Error creating lc_serial port: %s - %s", device_name_.c_str(), ex.what());
         // throw ex;
     }
+
 }
 
 void EngineeringSystem::bufferToFloatArray(const uint8_t* buffer, float* floatArray, size_t size) {
@@ -302,7 +338,7 @@ std::vector<uint8_t> EngineeringSystem::floatArrayToBuffer(
 
 void EngineeringSystem::serial_recv()
 {
-    while (rclcpp::ok())
+    while (running_)
     {
         // try
         // {

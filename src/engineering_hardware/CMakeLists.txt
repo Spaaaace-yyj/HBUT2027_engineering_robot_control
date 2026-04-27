@@ -11,6 +11,7 @@ find_package(rclcpp REQUIRED)
 find_package(hardware_interface REQUIRED)
 find_package(pluginlib REQUIRED)
 find_package(serial_driver REQUIRED)
+find_package(auto_aim_interfaces REQUIRED)
 
 add_library(engineering_hardware SHARED
         src/engineering_system.cpp
@@ -25,6 +26,7 @@ ament_target_dependencies(engineering_hardware
         hardware_interface
         pluginlib
         serial_driver
+        auto_aim_interfaces
 )
 
 pluginlib_export_plugin_description_file(hardware_interface plugin.xml)

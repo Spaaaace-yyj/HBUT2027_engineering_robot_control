@@ -16,6 +16,7 @@
 
 #include <serial_driver/serial_driver.hpp>
 #include <iostream>
+#include "auto_aim_interfaces/msg/robot_arm_debug.hpp"
 
 namespace engineering_hardware
 {
@@ -57,7 +58,8 @@ namespace engineering_hardware
     private:
         std::vector<double> hw_positions_;
         std::vector<double> hw_velocities_;
-        std::vector<double> hw_commands_;
+        std::vector<double> hw_commands_positions_;
+        std::vector<double> hw_commands_velocities_;
 
         std::unique_ptr<IoContext> owned_ctx_;
         std::string device_name_;
@@ -67,6 +69,12 @@ namespace engineering_hardware
         std::thread receive_thread_;
         std::atomic<bool> running_{false};
         std::mutex data_mutex_;
+
+        //debug
+        rclcpp::Node::SharedPtr node_;
+        rclcpp::Publisher<auto_aim_interfaces::msg::RobotArmDebug>::SharedPtr debug_pub_;
+        std::shared_ptr<rclcpp::executors::SingleThreadedExecutor> ros_executor_;
+        std::thread spin_thread_;
 
     };
 
