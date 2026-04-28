@@ -1,0 +1,45 @@
+  use_gazebo: false
+
+  command_in_type: "unitless"   # joystick
+
+  scale:
+    linear: 0.5
+    rotational: 0.5
+    joint: 0.5
+
+  publish_period: 0.01
+  low_latency_mode: true
+
+  # ⭐控制输出类型
+  command_out_type: trajectory_msgs/JointTrajectory
+  publish_joint_positions: true
+  publish_joint_velocities: true
+  publish_joint_accelerations: false
+
+  smoothing_filter_plugin_name: "online_signal_smoothing::ButterworthFilterPlugin"
+
+  #规划组（你的MoveIt group）
+  move_group_name: rm_robot_arm   # ←改成你的
+  #末端执行器
+  ee_frame_name: end_effect_link  # ←改
+  #基坐标
+  planning_frame: base_link
+
+  robot_link_command_frame:  base_link
+
+  ## Topic names
+  cartesian_command_in_topic: ~/delta_twist_cmds  # Topic for incoming Cartesian twist commands
+  joint_command_in_topic: ~/delta_joint_cmds # Topic for incoming joint angle commands
+  joint_topic: /joint_states
+  status_topic: ~/status # Publish status to this topic
+  command_out_topic: /rm_robot_arm_controller/joint_trajectory
+
+  #安全参数
+  check_collisions: false
+  incoming_command_timeout: 0.1
+  num_outgoing_halt_msgs_to_publish: 4
+
+  lower_singularity_threshold: 100.0
+  hard_stop_singularity_threshold: 2000.0
+
+  joint_limit_margin: 0.1

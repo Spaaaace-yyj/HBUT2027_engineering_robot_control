@@ -9,8 +9,9 @@ using namespace engineering_hardware;
 hardware_interface::CallbackReturn EngineeringSystem::on_init(
   const hardware_interface::HardwareInfo & info)
 {
+    //ros2node初始化
     node_ = std::make_shared<rclcpp::Node>("engineering_hw_node");
-
+    //debug话题
     debug_pub_ = node_->create_publisher<auto_aim_interfaces::msg::RobotArmDebug>("/hw_debug", 10);
 
     if (hardware_interface::SystemInterface::on_init(info) !=
@@ -25,6 +26,7 @@ hardware_interface::CallbackReturn EngineeringSystem::on_init(
     hw_commands_positions_.resize(info.joints.size(), 0.0);
     hw_commands_velocities_.resize(info.joints.size(), 0.0);
 
+    //初始化参数，从硬件描述文件中读取参数
     init_param();
 
     return hardware_interface::CallbackReturn::SUCCESS;
@@ -41,8 +43,10 @@ hardware_interface::CallbackReturn EngineeringSystem::on_configure(
         hw_commands_velocities_[i] = 0.0;
     }
 
+    //打开串口
     init_serial();
 
+    //ros2线程
     ros_executor_ = std::make_shared<rclcpp::executors::SingleThreadedExecutor>();
     ros_executor_->add_node(node_);
     spin_thread_ = std::thread([this]() {
@@ -138,6 +142,7 @@ hardware_interface::return_type EngineeringSystem::write(
     std::vector<uint8_t> buffer(size);
     std::vector<float> send_float(hw_commands_positions_.size());
     auto_aim_interfaces::msg::RobotArmDebug debug_msg;
+
     for (size_t i = 0; i < hw_commands_positions_.size(); i++)
     {
         // RCLCPP_INFO(rclcpp::get_logger("hardware"),
@@ -146,40 +151,26 @@ hardware_interface::return_type EngineeringSystem::write(
         debug_msg.joint.push_back(hw_commands_positions_[i]);
         debug_msg.joint_v.push_back(hw_commands_velocities_[i]);
     }
+
     send_float[0] *= -1.0f;
     send_float[4] *= -1.0f;
     debug_msg.joint[4] *= -1.0f;
     debug_msg.joint[0] *= -1.0f;
+    //todo：关节速度是否要发给电控
     buffer = floatArrayToBuffer(send_float);
-
-    std::stringstream ss;
-    // for (size_t i = 0; i < 5 * sizeof(float); ++i)
-    // {
-    //     ss << std::hex << std::setw(2) << std::setfill('0')
-    //        << static_cast<int>(buffer[i]) << " ";
-    // }
-    // RCLCPP_INFO(rclcpp::get_logger("buffer"), "%s", ss.str().c_str());
 
     debug_pub_->publish(debug_msg);
 
     if (serial_driver_->port()->is_open() && serial_driver_)
     {
         serial_driver_->port()->send(buffer);
-
     }else
     {
-        RCLCPP_ERROR(rclcpp::get_logger("buffer"), "open serial fail!");
+        // RCLCPP_ERROR(rclcpp::get_logger("buffer"), "open serial fail!");
     }
 
     return hardware_interface::return_type::OK;
 }
-
-#include "pluginlib/class_list_macros.hpp"
-
-PLUGINLIB_EXPORT_CLASS(
-  engineering_hardware::EngineeringSystem,
-  hardware_interface::SystemInterface
-)
 
 void EngineeringSystem::init_param()
 {
@@ -340,6 +331,8 @@ void EngineeringSystem::serial_recv()
 {
     while (running_)
     {
+        //todo:通信接受代码
+
         // try
         // {
         //
@@ -350,3 +343,10 @@ void EngineeringSystem::serial_recv()
 
     }
 }
+
+#include "pluginlib/class_list_macros.hpp"
+
+PLUGINLIB_EXPORT_CLASS(
+  engineering_hardware::EngineeringSystem,
+  hardware_interface::SystemInterface
+)

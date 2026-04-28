@@ -48,7 +48,7 @@ void HelloMoveIt::prompt(const std::string& text)
 
 void HelloMoveIt::drawTrajectory(const moveit::planning_interface::MoveGroupInterface::Plan& plan)
 {
-    auto jmg = move_group_->getRobotModel()->getJointModelGroup("panda_arm");
+    auto jmg = move_group_->getRobotModel()->getJointModelGroup("rm_robot_arm");
     visual_tools_->publishTrajectoryLine(plan.trajectory_, jmg);
 }
 

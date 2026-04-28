@@ -447,11 +447,6 @@
   </joint>
   <link
     name="end_effect_link">
-    <inertial>
-      <origin
-        xyz="0.531788329722349 0.219390511663608 -0.139953002920823"
-        rpy="0 0 0" />
-    </inertial>
   </link>
   <joint
     name="end_effect_joint"

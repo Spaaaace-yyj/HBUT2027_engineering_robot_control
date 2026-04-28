@@ -20,3 +20,9 @@ source install/setup.bash
 ros2 launch robot_moveit_config demo.launch.py
 ```
 
+启动servo服务
+
+```bash
+ros2 service call /servo_node/start_servo std_srvs/srv/Trigger "{}"
+```
+

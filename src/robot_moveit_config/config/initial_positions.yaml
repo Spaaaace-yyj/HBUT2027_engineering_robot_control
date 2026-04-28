@@ -1,8 +1,0 @@
-# Default initial positions for engineering's ros2_control fake system
-
-initial_positions:
-  joint0: 0
-  joint1: 0
-  joint2: 0
-  joint3: 0
-  joint4: 0
