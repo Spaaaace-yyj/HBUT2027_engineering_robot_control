@@ -9,6 +9,7 @@ endif()
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(geometry_msgs REQUIRED)
+find_package(sensor_msgs REQUIRED)
 
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
@@ -27,6 +28,7 @@ add_executable(twist_publisher src/twist_publisher.cpp)
 ament_target_dependencies(twist_publisher
         rclcpp
         geometry_msgs
+        sensor_msgs
 )
 
 install(TARGETS

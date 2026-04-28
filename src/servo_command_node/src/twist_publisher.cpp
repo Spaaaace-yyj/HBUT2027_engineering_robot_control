@@ -4,47 +4,43 @@
 
 #include "../include/servo_command_node/twist_publisher.h"
 
-#include <rclcpp/rclcpp.hpp>
-#include <geometry_msgs/msg/twist_stamped.hpp>
-
-class TwistPublisher : public rclcpp::Node
+TwistPublisher::TwistPublisher() : Node("twist_publisher")
 {
-public:
-    TwistPublisher()
-    : Node("twist_publisher")
+
+    joy_sub_ = this->create_subscription<sensor_msgs::msg::Joy>("/joy", 10, std::bind(&TwistPublisher::joyControllerCallback, this, std::placeholders::_1));
+
+    pub_ = this->create_publisher<geometry_msgs::msg::TwistStamped>(
+    "/servo_node/delta_twist_cmds", 10);
+
+    RCLCPP_INFO(this->get_logger(), "Twist publisher started.");
+}
+
+void TwistPublisher::publishTwistMsg(geometry_msgs::msg::TwistStamped msg)
+{
+    msg.header.stamp = this->now();
+    msg.header.frame_id = "base_link";
+
+    pub_->publish(msg);
+}
+
+void TwistPublisher::joyControllerCallback(const sensor_msgs::msg::Joy::SharedPtr msg)
+{
+    if (msg->axes.size() < 6 || msg->buttons.size() < 8)
     {
-        pub_ = this->create_publisher<geometry_msgs::msg::TwistStamped>(
-            "/servo_node/delta_twist_cmds", 10);
-
-        timer_ = this->create_wall_timer(
-            std::chrono::milliseconds(20),   // 50Hz
-            std::bind(&TwistPublisher::timer_callback, this));
-
-        RCLCPP_INFO(this->get_logger(), "Twist publisher started.");
+        RCLCPP_WARN(this->get_logger(), "Joy message size not enough!");
+        return;
     }
+    auto twist_msg = geometry_msgs::msg::TwistStamped();
+    twist_msg.twist.linear.x = msg->axes[0];  //左遥左右
+    twist_msg.twist.linear.y = msg->axes[1];  //左遥上下
+    twist_msg.twist.linear.z = ((msg->axes[4] - 1.0f) + (msg->axes[5] - 1.0f) * -1.0f) / 2.0f;   //左右扳机
 
-private:
-    void timer_callback()
-    {
-        auto msg = geometry_msgs::msg::TwistStamped();
+    twist_msg.twist.angular.z = msg->axes[2]; //右遥左右
+    twist_msg.twist.angular.x = msg->axes[3]; //右遥上下
+    twist_msg.twist.angular.y = msg->buttons[6] + msg->buttons[7] * -1.0f;  //左右肩键
 
-        msg.header.stamp = this->now();
-        msg.header.frame_id = "base_link";  //必须和 planning_frame 一致
-
-        msg.twist.linear.x = 0.1;
-        msg.twist.linear.y = 0.0;
-        msg.twist.linear.z = 0.0;
-
-        msg.twist.angular.x = 0.0;
-        msg.twist.angular.y = 0.0;
-        msg.twist.angular.z = 0.0;
-
-        pub_->publish(msg);
-    }
-
-    rclcpp::Publisher<geometry_msgs::msg::TwistStamped>::SharedPtr pub_;
-    rclcpp::TimerBase::SharedPtr timer_;
-};
+    publishTwistMsg(twist_msg);
+}
 
 int main(int argc, char **argv)
 {

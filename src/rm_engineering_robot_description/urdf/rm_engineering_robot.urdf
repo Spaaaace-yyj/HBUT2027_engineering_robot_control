@@ -35,14 +35,13 @@
       </material>
     </visual>
     <collision>
-      <origin
+    <origin
         xyz="0 0 0"
         rpy="0 0 0" />
-      <geometry>
-        <mesh
-          filename="package://rm_engineering_robot_description/meshes/base_link.STL" />
-      </geometry>
-    </collision>
+    <geometry>
+    <box size="0.1 0.1 0.1"/>
+  </geometry>
+</collision>
   </link>
   <link
     name="link0">

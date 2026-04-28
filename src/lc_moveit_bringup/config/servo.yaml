@@ -16,7 +16,7 @@
   publish_joint_velocities: true
   publish_joint_accelerations: false
 
-  smoothing_filter_plugin_name: "online_signal_smoothing::ButterworthFilterPlugin"
+  smoothing_filter_plugin_name: "online_signal_smoothing::RuckigFilterPlugin"
 
   #规划组（你的MoveIt group）
   move_group_name: rm_robot_arm   # ←改成你的
