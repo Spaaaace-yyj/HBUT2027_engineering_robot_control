@@ -20,28 +20,38 @@
 
 namespace engineering_hardware
 {
+    typedef struct
+    {
+        float joint1;
+    } Vision_Send_s;
+
+    typedef struct
+    {
+        float joint1;
+    } Vision_Recv_s;
+
     class EngineeringSystem : public hardware_interface::SystemInterface
     {
     public:
         //初始化
-        hardware_interface::CallbackReturn on_init(const hardware_interface::HardwareInfo & info) override;
+        hardware_interface::CallbackReturn on_init(const hardware_interface::HardwareInfo& info) override;
         //lifecycle生命周期管理
         hardware_interface::CallbackReturn on_configure(
-            const rclcpp_lifecycle::State & previous_state) override;
+            const rclcpp_lifecycle::State& previous_state) override;
 
         std::vector<hardware_interface::StateInterface> export_state_interfaces() override;
         std::vector<hardware_interface::CommandInterface> export_command_interfaces() override;
 
         hardware_interface::CallbackReturn on_activate(
-            const rclcpp_lifecycle::State & previous_state) override;
+            const rclcpp_lifecycle::State& previous_state) override;
 
         hardware_interface::return_type read(
-          const rclcpp::Time & time,
-          const rclcpp::Duration & period) override;
+            const rclcpp::Time& time,
+            const rclcpp::Duration& period) override;
 
         hardware_interface::return_type write(
-          const rclcpp::Time & time,
-          const rclcpp::Duration & period) override;
+            const rclcpp::Time& time,
+            const rclcpp::Duration& period) override;
 
         hardware_interface::CallbackReturn on_deactivate(
             const rclcpp_lifecycle::State& previous_state) override;
@@ -55,6 +65,7 @@ namespace engineering_hardware
         void bufferToFloatArray(const uint8_t* buffer, float* floatArray, size_t size);
 
         std::vector<uint8_t> floatArrayToBuffer(const std::vector<float>& data);
+
     private:
         std::vector<double> hw_positions_;
         std::vector<double> hw_velocities_;
@@ -75,9 +86,7 @@ namespace engineering_hardware
         rclcpp::Publisher<auto_aim_interfaces::msg::RobotArmDebug>::SharedPtr debug_pub_;
         std::shared_ptr<rclcpp::executors::SingleThreadedExecutor> ros_executor_;
         std::thread spin_thread_;
-
     };
-
 }
 
 #endif //BUILD_ENGINEERING_SYSTEM_H

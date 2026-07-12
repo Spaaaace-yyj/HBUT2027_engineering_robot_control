@@ -15,6 +15,8 @@ find_package(auto_aim_interfaces REQUIRED)
 
 add_library(engineering_hardware SHARED
         src/engineering_system.cpp
+        src/crc_check.cpp
+        src/serial_process.cpp
 )
 
 target_include_directories(engineering_hardware PUBLIC

@@ -6,6 +6,7 @@
 
 using namespace engineering_hardware;
 
+//初始化
 hardware_interface::CallbackReturn EngineeringSystem::on_init(
   const hardware_interface::HardwareInfo & info)
 {
