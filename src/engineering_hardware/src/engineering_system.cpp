@@ -4,11 +4,15 @@
 
 #include "../include/engineering_hardware/engineering_system.h"
 
+#include "engineering_hardware/serial_process.hpp"
+
+#include <iostream>
+
 using namespace engineering_hardware;
 
 //初始化
 hardware_interface::CallbackReturn EngineeringSystem::on_init(
-  const hardware_interface::HardwareInfo & info)
+    const hardware_interface::HardwareInfo& info)
 {
     //ros2node初始化
     node_ = std::make_shared<rclcpp::Node>("engineering_hw_node");
@@ -34,9 +38,8 @@ hardware_interface::CallbackReturn EngineeringSystem::on_init(
 }
 
 hardware_interface::CallbackReturn EngineeringSystem::on_configure(
-  const rclcpp_lifecycle::State &)
+    const rclcpp_lifecycle::State&)
 {
-
     for (size_t i = 0; i < hw_positions_.size(); i++)
     {
         hw_positions_[i] = 0.0;
@@ -50,7 +53,8 @@ hardware_interface::CallbackReturn EngineeringSystem::on_configure(
     //ros2线程
     ros_executor_ = std::make_shared<rclcpp::executors::SingleThreadedExecutor>();
     ros_executor_->add_node(node_);
-    spin_thread_ = std::thread([this]() {
+    spin_thread_ = std::thread([this]()
+    {
         ros_executor_->spin();
     });
 
@@ -86,7 +90,7 @@ EngineeringSystem::export_command_interfaces()
 }
 
 hardware_interface::CallbackReturn EngineeringSystem::on_activate(
-  const rclcpp_lifecycle::State &)
+    const rclcpp_lifecycle::State&)
 {
     for (size_t i = 0; i < hw_positions_.size(); i++)
     {
@@ -120,57 +124,135 @@ hardware_interface::CallbackReturn EngineeringSystem::on_deactivate(
     return hardware_interface::CallbackReturn::SUCCESS;
 }
 
+void EngineeringSystem::serial_recv()
+{
+    while (running_)
+    {
+        try
+        {
+            recv_buffer_.clear();
+            recv_buffer_.resize(256);
+
+            size_t n = serial_driver_->port()->receive(recv_buffer_);
+            if (n <= 10)
+            {
+                RCLCPP_ERROR(node_->get_logger(), "Serial receive too short!");
+                continue;
+            }
+
+            if (recv_buffer_[0] == 0xA5)
+            {
+                uint16_t flags_register;
+                uint16_t decode_state = get_protocol_info(recv_buffer_.data(), &flags_register, (uint8_t*)recv_data_.joint);
+                if (decode_state != 0x01)
+                {
+                    RCLCPP_ERROR(node_->get_logger(), "The data packet is damaged and cannot be parsed! Cmd id = %x", decode_state);
+                    continue;
+                }
+            }
+            else
+            {
+                RCLCPP_ERROR(node_->get_logger(), "Receiving serial port frame header error; Header = %x", recv_buffer_[0]);
+                continue;
+            }
+        }catch (const std::exception& ex)
+        {
+
+        }
+    }
+}
+
 //从单片机接受，然后发送给moveit2
 hardware_interface::return_type EngineeringSystem::read(
-  const rclcpp::Time &,
-  const rclcpp::Duration &)
+    const rclcpp::Time&,
+    const rclcpp::Duration&)
 {
     for (size_t i = 0; i < hw_positions_.size(); i++)
     {
+        //todo:这里速度后续要不要接上，要不要呢？
         hw_velocities_[i] = hw_commands_velocities_[i];
-        hw_positions_[i] = hw_commands_positions_[i];
+        hw_positions_[i] = recv_data_.joint[i];
     }
-
     return hardware_interface::return_type::OK;
 }
 
 //发送给单片机的控制指令
 hardware_interface::return_type EngineeringSystem::write(
-  const rclcpp::Time &,
-  const rclcpp::Duration &)
+    const rclcpp::Time&,
+    const rclcpp::Duration&)
 {
-    size_t size = 5 * sizeof(float);
-    std::vector<uint8_t> buffer(size);
-    std::vector<float> send_float(hw_commands_positions_.size());
     auto_aim_interfaces::msg::RobotArmDebug debug_msg;
 
     for (size_t i = 0; i < hw_commands_positions_.size(); i++)
     {
         // RCLCPP_INFO(rclcpp::get_logger("hardware"),
-        //             "joint %ld cmd: %f", i, hw_commands_[i]);
-        send_float[i] = hw_commands_positions_[i];
+        //             "joint %ld cmd: %f", i, hw_commands_positions_[i]);
         debug_msg.joint.push_back(hw_commands_positions_[i]);
         debug_msg.joint_v.push_back(hw_commands_velocities_[i]);
+        send_data_.joint[i] = hw_commands_positions_[i];
     }
 
-    send_float[0] *= -1.0f;
-    send_float[4] *= -1.0f;
     debug_msg.joint[4] *= -1.0f;
     debug_msg.joint[0] *= -1.0f;
-    //todo：关节速度是否要发给电控
-    buffer = floatArrayToBuffer(send_float);
-
+    send_data_.joint[4] *= -1.0f;
+    send_data_.joint[0] *= -1.0f;
     debug_pub_->publish(debug_msg);
 
-    if (serial_driver_->port()->is_open() && serial_driver_)
+    //序列化
+    uint16_t flag_register = 0x0000;
+    uint16_t tx_len;
+    uint8_t send_temp[64] = {0};
+
+    get_protocol_send_data(0x01, flag_register, send_data_.joint, 6, send_temp, &tx_len);
+    std::vector<uint8_t> send_buffer(send_temp, send_temp + tx_len);
+
+    for (size_t i = 0; i < send_buffer.size(); ++i)
     {
-        serial_driver_->port()->send(buffer);
-    }else
+        printf("%02X ", send_buffer[i]);
+    }
+    printf("\n");
+
+    if (serial_driver_ && serial_driver_->port()->is_open())
     {
-        // RCLCPP_ERROR(rclcpp::get_logger("buffer"), "open serial fail!");
+        serial_driver_->port()->send(send_buffer);
+    }
+    else
+    {
+        serial_timeout_counter_++;
+        RCLCPP_ERROR(node_->get_logger(), "Disconnect with Serial port! Try to reconnect....");
+        OpenPort();
     }
 
+
     return hardware_interface::return_type::OK;
+}
+
+void EngineeringSystem::OpenPort()
+{
+    try
+    {
+        if (serial_driver_->port()->is_open())
+        {
+            RCLCPP_WARN(node_->get_logger(), "Serial port is open, closing!");
+            serial_driver_->port()->close();
+        }
+
+        rclcpp::sleep_for(std::chrono::milliseconds(100));
+
+        serial_driver_->port()->open();
+        if (serial_driver_->port()->is_open())
+        {
+            RCLCPP_INFO(node_->get_logger(), "Serial port Open!");
+        }
+        else
+        {
+            RCLCPP_ERROR(node_->get_logger(), "Serial open faild");
+        }
+    }
+    catch (const std::exception& e)
+    {
+        RCLCPP_ERROR(node_->get_logger(), "Serial port reopen failed: %s", e.what());
+    }
 }
 
 void EngineeringSystem::init_param()
@@ -188,7 +270,7 @@ void EngineeringSystem::init_param()
     {
         device_name_ = info_.hardware_parameters.at("device_name");
     }
-    catch (const std::exception & ex)
+    catch (const std::exception& ex)
     {
         RCLCPP_ERROR(rclcpp::get_logger("hardware"), "The device name provided was invalid");
         throw ex;
@@ -198,7 +280,7 @@ void EngineeringSystem::init_param()
     {
         baud_rate = std::stoi(info_.hardware_parameters["baud_rate"]);
     }
-    catch (const std::exception & ex)
+    catch (const std::exception& ex)
     {
         RCLCPP_ERROR(rclcpp::get_logger("hardware"), "The baud_rate provided was invalid");
         throw ex;
@@ -222,10 +304,10 @@ void EngineeringSystem::init_param()
         }
         else
         {
-            throw std::invalid_argument{ "The flow_control parameter must be one of: none, software, or hardware." };
+            throw std::invalid_argument{"The flow_control parameter must be one of: none, software, or hardware."};
         }
     }
-    catch (const std::exception & ex)
+    catch (const std::exception& ex)
     {
         RCLCPP_ERROR(rclcpp::get_logger("hardware"), "The flow_control provided was invalid");
         throw ex;
@@ -249,10 +331,10 @@ void EngineeringSystem::init_param()
         }
         else
         {
-            throw std::invalid_argument{ "The parity parameter must be one of: none, odd, or even." };
+            throw std::invalid_argument{"The parity parameter must be one of: none, odd, or even."};
         }
     }
-    catch (const std::exception & ex)
+    catch (const std::exception& ex)
     {
         RCLCPP_ERROR(rclcpp::get_logger("hardware"), "The parity provided was invalid");
         throw ex;
@@ -276,10 +358,10 @@ void EngineeringSystem::init_param()
         }
         else
         {
-            throw std::invalid_argument{ "The stop_bits parameter must be one of: 1, 1.5, or 2." };
+            throw std::invalid_argument{"The stop_bits parameter must be one of: 1, 1.5, or 2."};
         }
     }
-    catch (const std::exception & ex)
+    catch (const std::exception& ex)
     {
         RCLCPP_ERROR(rclcpp::get_logger("hardware"), "The stop_bits provided was invalid");
         throw ex;
@@ -290,7 +372,6 @@ void EngineeringSystem::init_param()
 
 void EngineeringSystem::init_serial()
 {
-
     owned_ctx_ = std::make_unique<IoContext>(2);
     serial_driver_ = std::make_unique<drivers::serial_driver::SerialDriver>(*owned_ctx_);
     try
@@ -306,14 +387,16 @@ void EngineeringSystem::init_serial()
     }
     catch (const std::exception& ex)
     {
-        RCLCPP_ERROR(rclcpp::get_logger("lc_serial"), "Error creating lc_serial port: %s - %s", device_name_.c_str(), ex.what());
+        RCLCPP_ERROR(rclcpp::get_logger("lc_serial"), "Error creating lc_serial port: %s - %s", device_name_.c_str(),
+                     ex.what());
         // throw ex;
     }
-
 }
 
-void EngineeringSystem::bufferToFloatArray(const uint8_t* buffer, float* floatArray, size_t size) {
-    for (size_t i = 0; i < size; ++i) {
+void EngineeringSystem::bufferToFloatArray(const uint8_t* buffer, float* floatArray, size_t size)
+{
+    for (size_t i = 0; i < size; ++i)
+    {
         memcpy(&floatArray[i], buffer + i * sizeof(float), sizeof(float));
     }
 }
@@ -328,26 +411,9 @@ std::vector<uint8_t> EngineeringSystem::floatArrayToBuffer(
     return buffer;
 }
 
-void EngineeringSystem::serial_recv()
-{
-    while (running_)
-    {
-        //todo:通信接受代码
-
-        // try
-        // {
-        //
-        // }catch (const std::exception& ex)
-        // {
-        //
-        // }
-
-    }
-}
-
 #include "pluginlib/class_list_macros.hpp"
 
 PLUGINLIB_EXPORT_CLASS(
-  engineering_hardware::EngineeringSystem,
-  hardware_interface::SystemInterface
+    engineering_hardware::EngineeringSystem,
+    hardware_interface::SystemInterface
 )

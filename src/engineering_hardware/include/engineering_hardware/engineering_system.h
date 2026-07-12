@@ -22,12 +22,12 @@ namespace engineering_hardware
 {
     typedef struct
     {
-        float joint1;
+        float joint[6];
     } Vision_Send_s;
 
     typedef struct
     {
-        float joint1;
+        float joint[6];
     } Vision_Recv_s;
 
     class EngineeringSystem : public hardware_interface::SystemInterface
@@ -64,6 +64,8 @@ namespace engineering_hardware
 
         void bufferToFloatArray(const uint8_t* buffer, float* floatArray, size_t size);
 
+        void OpenPort();
+
         std::vector<uint8_t> floatArrayToBuffer(const std::vector<float>& data);
 
     private:
@@ -71,6 +73,12 @@ namespace engineering_hardware
         std::vector<double> hw_velocities_;
         std::vector<double> hw_commands_positions_;
         std::vector<double> hw_commands_velocities_;
+
+        //通讯数据
+        Vision_Send_s send_data_ = {0};
+        Vision_Recv_s recv_data_ = {0};
+
+        std::vector<uint8_t> recv_buffer_;
 
         std::unique_ptr<IoContext> owned_ctx_;
         std::string device_name_;
@@ -80,6 +88,7 @@ namespace engineering_hardware
         std::thread receive_thread_;
         std::atomic<bool> running_{false};
         std::mutex data_mutex_;
+        int serial_timeout_counter_ = 0;
 
         //debug
         rclcpp::Node::SharedPtr node_;
