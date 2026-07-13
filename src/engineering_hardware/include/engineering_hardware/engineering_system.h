@@ -27,7 +27,14 @@ namespace engineering_hardware
 
     typedef struct
     {
-        float joint[6];
+        float joint0;
+        float joint1;
+        float joint2;
+        float joint3;
+        float joint4;
+        float joint5;
+        float joint6;
+
     } Vision_Recv_s;
 
     class EngineeringSystem : public hardware_interface::SystemInterface

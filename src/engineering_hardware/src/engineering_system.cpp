@@ -128,36 +128,31 @@ void EngineeringSystem::serial_recv()
 {
     while (running_)
     {
-        try
-        {
-            recv_buffer_.clear();
-            recv_buffer_.resize(256);
+        recv_buffer_.clear();
+        recv_buffer_.resize(256);
 
-            size_t n = serial_driver_->port()->receive(recv_buffer_);
-            if (n <= 10)
+        size_t n = serial_driver_->port()->receive(recv_buffer_);
+        if (n <= 10)
+        {
+            RCLCPP_ERROR(node_->get_logger(), "Serial receive too short!");
+            continue;
+        }
+
+        if (recv_buffer_[0] == 0xA5)
+        {
+            uint16_t flags_register;
+            uint16_t decode_state = get_protocol_info(recv_buffer_.data(), &flags_register, (uint8_t*)&recv_data_.joint0);
+            if (decode_state != 0x01)
             {
-                RCLCPP_ERROR(node_->get_logger(), "Serial receive too short!");
+                RCLCPP_ERROR(node_->get_logger(), "The data packet is damaged and cannot be parsed! Cmd id = %x",
+                             decode_state);
                 continue;
             }
-
-            if (recv_buffer_[0] == 0xA5)
-            {
-                uint16_t flags_register;
-                uint16_t decode_state = get_protocol_info(recv_buffer_.data(), &flags_register, (uint8_t*)recv_data_.joint);
-                if (decode_state != 0x01)
-                {
-                    RCLCPP_ERROR(node_->get_logger(), "The data packet is damaged and cannot be parsed! Cmd id = %x", decode_state);
-                    continue;
-                }
-            }
-            else
-            {
-                RCLCPP_ERROR(node_->get_logger(), "Receiving serial port frame header error; Header = %x", recv_buffer_[0]);
-                continue;
-            }
-        }catch (const std::exception& ex)
+        }
+        else
         {
-
+            RCLCPP_ERROR(node_->get_logger(), "Receiving serial port frame header error; Header = %x", recv_buffer_[0]);
+            continue;
         }
     }
 }
@@ -167,12 +162,20 @@ hardware_interface::return_type EngineeringSystem::read(
     const rclcpp::Time&,
     const rclcpp::Duration&)
 {
+
+
     for (size_t i = 0; i < hw_positions_.size(); i++)
     {
         //todo:这里速度后续要不要接上，要不要呢？
         hw_velocities_[i] = hw_commands_velocities_[i];
-        hw_positions_[i] = recv_data_.joint[i];
     }
+    hw_positions_[0] = recv_data_.joint1 * -1.0;
+    hw_positions_[1] = recv_data_.joint6;
+    hw_positions_[2] = recv_data_.joint5;
+    hw_positions_[3] = recv_data_.joint2;
+    hw_positions_[4] = recv_data_.joint3 * -1.0;
+    hw_positions_[5] = recv_data_.joint4;
+
     return hardware_interface::return_type::OK;
 }
 
