@@ -17,7 +17,10 @@ ROS2:Humble
 bash build.sh
 #运行
 source install/setup.bash 
-ros2 launch robot_moveit_config demo.launch.py
+#用isaac-sim仿真启动
+ros2 launch rm_engineering_moveit_config demo_isaac_sim.launch.py 
+#实车启动
+ros2 launch rm_engineering_moveit_config demo.launch.py 
 ```
 
 启动servo服务

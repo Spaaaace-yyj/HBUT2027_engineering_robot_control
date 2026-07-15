@@ -1,17 +1,33 @@
 <?xml version="1.0"?>
 <robot xmlns:xacro="http://www.ros.org/wiki/xacro">
-    <xacro:macro name="rm_engineering_robot_ros2_control" params="name initial_positions_file">
+    <xacro:macro name="rm_engineering_robot_ros2_control" params="name initial_positions_file hardware_type:=real" >
         <xacro:property name="initial_positions" value="${load_yaml(initial_positions_file)['initial_positions']}"/>
-
+<!--        <xacro:arg name="hardware_type" default="real"/>-->
         <ros2_control name="${name}" type="system">
             <hardware>
                 <!-- By default, set up controllers for simulation. This won't work on real hardware -->
-                <plugin>engineering_hardware/EngineeringSystem</plugin>
-                <param name="device_name">/dev/ttyACM0</param>
-                <param name="baud_rate">115200</param>
-                <param name="fc_string">none</param>
-                <param name="pt_string">none</param>
-                <param name="sb_string">1</param>
+<!--                <plugin>engineering_hardware/EngineeringSystem</plugin>-->
+<!--                <param name="device_name">/dev/ttyACM0</param>-->
+<!--                <param name="baud_rate">115200</param>-->
+<!--                <param name="fc_string">none</param>-->
+<!--                <param name="pt_string">none</param>-->
+<!--                <param name="sb_string">1</param>-->
+
+                <xacro:if value="${hardware_type == 'real'}">
+                    <plugin>engineering_hardware/EngineeringSystem</plugin>
+                    <param name="device_name">/dev/ttyACM0</param>
+                    <param name="baud_rate">115200</param>
+                    <param name="fc_string">none</param>
+                    <param name="pt_string">none</param>
+                    <param name="sb_string">1</param>
+                </xacro:if>
+
+                <!-- Isaac Sim 接口 -->
+                <xacro:if value="${hardware_type == 'isaac'}">
+                    <plugin>topic_based_ros2_control/TopicBasedSystem</plugin>
+                    <param name="joint_commands_topic">/isaac_joint_commands</param>
+                    <param name="joint_states_topic">/isaac_joint_states</param>
+                </xacro:if>
             </hardware>
             <joint name="joint0">
                 <command_interface name="position"/>
