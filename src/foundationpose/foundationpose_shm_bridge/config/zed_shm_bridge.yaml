@@ -1,0 +1,36 @@
+foundationpose_bridge:
+  ros__parameters:
+    rgb_topic: /zed/zed_node/rgb/color/rect/image
+    depth_topic: /zed/zed_node/depth/depth_registered
+    camera_info_topic: /zed/zed_node/rgb/color/rect/camera_info
+
+    rgbd_shm_name: /foundationpose_rgbd
+    control_shm_name: /foundationpose_control
+    result_shm_name: /foundationpose_result
+
+    sync_queue_size: 10
+    sync_slop_sec: 0.01
+    unlink_rgbd_on_exit: false
+    log_period_sec: 2.0
+    result_poll_hz: 100.0
+
+    enabled: true
+    yolo_conf: 0.5
+    mask_threshold: 0.5
+    yolo_imgsz: 640
+    est_refine_iter: 5
+    track_refine_iter: 2
+    min_depth_m: 0.05
+    max_depth_m: 5.0
+    min_mask_pixels: 500
+    min_valid_depth_ratio: 0.05
+    mask_close_kernel: 0
+
+    publish_pose: true
+    publish_tf: true
+    publish_debug_image: true
+    publish_mask: true
+
+    # 留空时自动沿用 ZED RGB 消息的 header.frame_id。
+    camera_frame_id: ""
+    object_frame_id: foundationpose_object
