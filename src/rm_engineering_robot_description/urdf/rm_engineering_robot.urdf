@@ -460,4 +460,15 @@
     <axis
       xyz="0 0 0" />
   </joint>
+
+ <!-- ZED相机固定安装 -->
+  <link name="zed_camera_link"/>
+
+  <joint name="link3_to_zed_camera_link" type="fixed">
+    <parent link="link5"/>
+    <child link="zed_camera_link"/>
+    <origin
+      xyz="0.10 0.00 0.05"
+      rpy="0.00 0.00 0.00"/>
+  </joint>
 </robot>

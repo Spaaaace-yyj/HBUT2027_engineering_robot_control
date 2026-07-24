@@ -51,6 +51,7 @@ namespace foundationpose_shm_bridge
             declareAndReadParameters();
             validateStartupParameters();
 
+            //共享内存通讯
             control_writer_ = std::make_unique<ControlShmWriter>(control_shm_name_, true);
             result_reader_ = std::make_unique<ResultShmReader>(result_shm_name_);
 
@@ -58,6 +59,7 @@ namespace foundationpose_shm_bridge
             const auto image_qos = rclcpp::SensorDataQoS();
             const auto status_qos = rclcpp::QoS(1).reliable().transient_local();
 
+            //foundationpose结果发布
             pose_pub_ = create_publisher<geometry_msgs::msg::PoseStamped>(
                 "/foundationpose/pose", pose_qos);
             debug_image_pub_ = create_publisher<sensor_msgs::msg::Image>(
@@ -71,6 +73,7 @@ namespace foundationpose_shm_bridge
 
             tf_broadcaster_ = std::make_unique<tf2_ros::TransformBroadcaster>(*this);
 
+            //控制服务
             set_enabled_service_ = create_service<std_srvs::srv::SetBool>(
                 "/foundationpose/set_enabled",
                 std::bind(
