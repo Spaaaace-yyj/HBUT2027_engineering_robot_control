@@ -5,6 +5,7 @@
 #include <cv_bridge/cv_bridge.h>
 #include <geometry_msgs/msg/pose_stamped.hpp>
 #include <geometry_msgs/msg/transform_stamped.hpp>
+#include <visualization_msgs/msg/marker.hpp>
 #include <message_filters/subscriber.h>
 #include <message_filters/sync_policies/approximate_time.h>
 #include <message_filters/synchronizer.h>
@@ -58,6 +59,7 @@ namespace foundationpose_shm_bridge
             const auto pose_qos = rclcpp::QoS(rclcpp::KeepLast(10)).reliable();
             const auto image_qos = rclcpp::SensorDataQoS();
             const auto status_qos = rclcpp::QoS(1).reliable().transient_local();
+            const auto marker_qos = rclcpp::QoS(rclcpp::KeepLast(1)).reliable().transient_local();
 
             //foundationpose结果发布
             pose_pub_ = create_publisher<geometry_msgs::msg::PoseStamped>(
@@ -70,6 +72,8 @@ namespace foundationpose_shm_bridge
                 "/foundationpose/status", status_qos);
             state_pub_ = create_publisher<std_msgs::msg::UInt8>(
                 "/foundationpose/state", status_qos);
+            object_mesh_pub_ = create_publisher<visualization_msgs::msg::Marker>(
+                "/foundationpose/object_mesh", marker_qos);
 
             tf_broadcaster_ = std::make_unique<tf2_ros::TransformBroadcaster>(*this);
 
@@ -229,6 +233,41 @@ namespace foundationpose_shm_bridge
             {
                 throw std::invalid_argument("depth range is invalid");
             }
+        }
+
+        void publishObjectMeshMarker(const rclcpp::Time& stame)
+        {
+            visualization_msgs::msg::Marker marker;
+            marker.header.frame_id = object_frame_id_;
+            marker.header.stamp = stame;
+            marker.id = 0;
+
+            marker.type = visualization_msgs::msg::Marker::MESH_RESOURCE;
+
+            marker.action = visualization_msgs::msg::Marker::ADD;
+
+            //这里设置的是相对于frameid的变换，由于发布了对应的tf,这里直接附着在0点
+            marker.pose.position.x = 0.0;
+            marker.pose.position.y = 0.0;
+            marker.pose.position.z = 0.0;
+
+            marker.pose.orientation.x = 0.0;
+            marker.pose.orientation.y = 0.0;
+            marker.pose.orientation.z = 0.0;
+            marker.pose.orientation.w = 1.0;
+
+            marker.mesh_resource = "package://foundationpose_shm_bridge/mesh/real_color_obj.obj";
+
+            marker.mesh_use_embedded_materials = true;
+
+            marker.scale.x = 0.001;
+            marker.scale.y = 0.001;
+            marker.scale.z = 0.001;
+
+            marker.lifetime = rclcpp::Duration::from_seconds(0.0);
+
+            object_mesh_pub_->publish(marker);
+
         }
 
         void setupImageSubscriptions()
@@ -689,14 +728,18 @@ namespace foundationpose_shm_bridge
 
                 if (publish_tf_)
                 {
+                    //发布fondationpose输出的物体位姿tf
                     geometry_msgs::msg::TransformStamped transform;
                     transform.header = pose_message.header;
+                    // transform.header.frame_id = camera_frame_id_;
                     transform.child_frame_id = object_frame_id_;
                     transform.transform.translation.x = pose_message.pose.position.x;
                     transform.transform.translation.y = pose_message.pose.position.y;
                     transform.transform.translation.z = pose_message.pose.position.z;
                     transform.transform.rotation = pose_message.pose.orientation;
                     tf_broadcaster_->sendTransform(transform);
+
+                    publishObjectMeshMarker(pose_message.header.stamp);
                 }
             }
 
@@ -817,6 +860,7 @@ namespace foundationpose_shm_bridge
         rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr mask_pub_;
         rclcpp::Publisher<std_msgs::msg::String>::SharedPtr status_pub_;
         rclcpp::Publisher<std_msgs::msg::UInt8>::SharedPtr state_pub_;
+        rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr object_mesh_pub_;
         std::unique_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster_;
 
         rclcpp::Service<std_srvs::srv::SetBool>::SharedPtr set_enabled_service_;

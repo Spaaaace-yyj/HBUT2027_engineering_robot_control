@@ -20,6 +20,7 @@ find_package(message_filters REQUIRED)
 find_package(tf2 REQUIRED)
 find_package(tf2_ros REQUIRED)
 find_package(OpenCV REQUIRED)
+find_package(visualization_msgs REQUIRED)
 
 add_library(foundationpose_shm_ipc
   src/shared_rgbd_writer.cpp
@@ -60,6 +61,7 @@ ament_target_dependencies(zed_shm_bridge_node
   message_filters
   tf2
   tf2_ros
+  visualization_msgs
 )
 
 target_link_libraries(zed_shm_bridge_node
@@ -78,13 +80,18 @@ install(
 )
 
 install(
-  DIRECTORY include/
-  DESTINATION include
+        DIRECTORY include/
+        DESTINATION include
 )
 
 install(
-  DIRECTORY launch config
-  DESTINATION share/${PROJECT_NAME}
+        DIRECTORY launch config
+        DESTINATION share/${PROJECT_NAME}
+)
+
+install(
+        DIRECTORY mesh
+        DESTINATION share/${PROJECT_NAME}
 )
 
 ament_export_include_directories(include)
