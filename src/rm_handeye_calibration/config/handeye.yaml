@@ -1,0 +1,52 @@
+handeye_calibration:
+  ros__parameters:
+    # ZED rectified RGB image and matching CameraInfo.
+    image_topic: /zed/zed_node/rgb/color/rect/image
+    camera_info_topic: /zed/zed_node/rgb/color/rect/camera_info
+
+    # B: robot base frame.
+    # H: the rigid robot link on which the ZED is mounted.
+    base_frame: base_link
+    hand_frame: link5
+
+    # Leave empty to use the image header.frame_id automatically.
+    # Normally this should be the ZED rectified optical frame.
+    camera_frame: ""
+
+    # ZED root frame connected to the robot URDF fixed joint.
+    # The saved result will include both H->optical and H->zed_camera_link.
+    camera_root_frame: zed_camera_link
+
+    board:
+      squares_x: 8
+      squares_y: 6
+      square_length_m: 0.030
+      marker_length_m: 0.022
+      dictionary: DICT_4X4_100
+      axis_length_m: 0.060
+
+    quality:
+      min_charuco_corners: 12
+      max_reprojection_error_px: 1.5
+      min_translation_delta_m: 0.030
+      min_rotation_delta_deg: 8.0
+      min_samples: 10
+
+      # Candidate score = translation RMS + this value * rotation RMS(rad).
+      rotation_weight_m_per_rad: 0.05
+
+    performance:
+      # 1.0 gives maximum pose accuracy. Use 0.75 if the GUI is too slow.
+      detection_scale: 1.0
+
+      # The image callback only stores the newest message. ChArUco detection is
+      # rate-limited independently, so a 100 FPS ZED topic does not cause a backlog.
+      max_detection_hz: 15.0
+      ui_hz: 30.0
+      opencv_threads: 2
+      max_display_width: 1280
+
+    tf_timeout_sec: 0.25
+    output_directory: ~/handeye_calibration
+    autosave_samples: true
+    window_name: RM Hand-Eye Calibration
