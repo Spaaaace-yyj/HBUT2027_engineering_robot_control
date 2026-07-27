@@ -1,0 +1,25 @@
+auto_arm_bringup:
+  ros__parameters:
+    # 硬件类型: "real"（真实机械臂）或 "isaac"（Isaac Sim 仿真）
+    hardware_type: "real"
+
+    # zed_shm_bridge 配置文件路径（留空则使用默认配置）
+    zed_shm_bridge_config: ""
+
+    # 是否启动 RViz
+    use_rviz: true
+
+    # 是否启动 MoveIt Servo
+    use_servo: false
+
+    # ZED 相机相关（传递给 zed_shm_bridge）
+    zed:
+      rgb_topic: /zed/zed_node/rgb/color/rect/image
+      depth_topic: /zed/zed_node/depth/depth_registered
+      camera_info_topic: /zed/zed_node/rgb/color/rect/camera_info
+
+    # 共享内存名称
+    shm:
+      rgbd_shm_name: /foundationpose_rgbd
+      control_shm_name: /foundationpose_control
+      result_shm_name: /foundationpose_result
