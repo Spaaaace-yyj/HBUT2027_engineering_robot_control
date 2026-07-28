@@ -17,6 +17,7 @@
 
 #include <tf2/LinearMath/Quaternion.h>
 #include <tf2/LinearMath/Transform.h>
+#include <tf2/LinearMath/Matrix3x3.h>
 #if __has_include(<tf2_geometry_msgs/tf2_geometry_msgs.hpp>)
 #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
 #else
@@ -184,6 +185,26 @@ namespace rm_vision_pick_place
             retreat_max_m_ = declare_parameter<double>("retreat_max_m", 0.10);
 
             auto_execute_ = declare_parameter<bool>("auto_execute", false);
+
+            side_grasp_azimuth_samples_ =
+                declare_parameter<int>(
+                    "side_grasp_azimuth_samples",
+                    8);
+
+            side_grasp_roll_samples_ =
+                declare_parameter<int>(
+                    "side_grasp_roll_samples",
+                    4);
+
+            side_grasp_radius_m_ =
+                declare_parameter<double>(
+                    "side_grasp_radius_m",
+                    0.055);
+
+            side_grasp_height_offset_m_ =
+                declare_parameter<double>(
+                    "side_grasp_height_offset_m",
+                    0.0);
         }
 
         void validateParameters() const
@@ -256,6 +277,124 @@ namespace rm_vision_pick_place
             response->message = "pipeline accepted";
         }
 
+        geometry_msgs::msg::PoseStamped makeSideGraspPose(
+            const geometry_msgs::msg::Pose& object_pose,
+            const double azimuth_rad,
+            const double roll_rad) const
+        {
+            /*
+             * 假设：
+             *
+             * 1. foundationpose_object 的 +Z 是圆柱轴
+             * 2. end_effect_link 的 +X 是接近方向
+             * 3. +X 应从圆柱外部指向圆柱中心
+             */
+
+            const double cosine = std::cos(azimuth_rad);
+            const double sine = std::sin(azimuth_rad);
+
+            /*
+             * end_effect_link 原点在物体坐标系中的位置。
+             *
+             * 圆柱侧面方位：
+             *   θ = 0       位于物体 +X 侧
+             *   θ = π/2     位于物体 +Y 侧
+             *   θ = π       位于物体 -X 侧
+             */
+            const tf2::Vector3 position_in_object(
+                side_grasp_radius_m_ * cosine,
+                side_grasp_radius_m_ * sine,
+                side_grasp_height_offset_m_);
+
+            /*
+             * 工具局部 +X 指向圆柱中心。
+             *
+             * 工具在 outward = [cosθ, sinθ, 0] 方向，
+             * 所以 inward = [-cosθ, -sinθ, 0]。
+             */
+            const tf2::Vector3 tool_x(
+                -cosine,
+                -sine,
+                0.0);
+
+            /*
+             * 不加滚转时，工具局部 +Z 与圆柱轴平行。
+             */
+            const tf2::Vector3 base_tool_z(
+                0.0,
+                0.0,
+                1.0);
+
+            /*
+             * 构造右手坐标系：
+             *
+             * X × Y = Z
+             * 因而 Y = Z × X
+             */
+            const tf2::Vector3 base_tool_y =
+                base_tool_z.cross(tool_x).normalized();
+
+            /*
+             * 绕工具自身 +X 轴增加 roll。
+             *
+             * 这不会改变接近方向，只改变末端绕接近轴的姿态。
+             */
+            const double roll_cosine = std::cos(roll_rad);
+            const double roll_sine = std::sin(roll_rad);
+
+            const tf2::Vector3 tool_y =
+                base_tool_y * roll_cosine +
+                base_tool_z * roll_sine;
+
+            const tf2::Vector3 tool_z =
+                -base_tool_y * roll_sine +
+                base_tool_z * roll_cosine;
+
+            /*
+             * 旋转矩阵的三列分别是：
+             *
+             * end_effect_link 的 X/Y/Z 轴
+             * 在 object frame 下的表示。
+             *
+             * tf2::Matrix3x3 构造参数按行排列。
+             */
+            const tf2::Matrix3x3 rotation_matrix(
+                tool_x.x(), tool_y.x(), tool_z.x(),
+                tool_x.y(), tool_y.y(), tool_z.y(),
+                tool_x.z(), tool_y.z(), tool_z.z());
+
+            tf2::Quaternion object_to_tool_rotation;
+            rotation_matrix.getRotation(
+                object_to_tool_rotation);
+
+            object_to_tool_rotation.normalize();
+
+            const tf2::Transform object_to_tool(
+                object_to_tool_rotation,
+                position_in_object);
+
+            /*
+             * planning_T_tool =
+             * planning_T_object × object_T_tool
+             */
+            tf2::Transform planning_to_object;
+            tf2::fromMsg(
+                object_pose,
+                planning_to_object);
+
+            const tf2::Transform planning_to_tool =
+                planning_to_object *
+                object_to_tool;
+
+            geometry_msgs::msg::PoseStamped result;
+
+            result.header.frame_id = planning_frame_;
+            result.header.stamp = now();
+            tf2::toMsg(planning_to_tool, result.pose);
+
+            return result;
+        }
+
         void runPipeline()
         {
             //抓取任务构造流水线
@@ -311,8 +450,8 @@ namespace rm_vision_pick_place
                 }
 
                 publishPipelineState(PipelineState::BUILDING_TASK, "building MTC task");
-                task_ = createTask(frozen_pose.pose, makePlaceObjectPose());
-
+                // task_ = createTask(frozen_pose.pose, makePlaceObjectPose());
+                task_ = createApproachAttachTask(frozen_pose.pose);
                 try
                 {
                     task_.init();
@@ -685,6 +824,290 @@ namespace rm_vision_pick_place
             return pose;
         }
 
+        mtc::Task createApproachAttachTask(
+            const geometry_msgs::msg::Pose& object_pose)
+        {
+            constexpr double kPi =
+                3.14159265358979323846;
+
+            mtc::Task task;
+
+            task.stages()->setName("approach cylinder and attach");
+
+            task.loadRobotModel(shared_from_this());
+
+            /*
+             * rm_robot_arm 是真正进行 IK 和运动规划的组。
+             *
+             * frame_end_effect 是 SRDF EndEffector 名称；
+             * end_effect_link 才是本任务使用的 IK Frame。
+             */
+            task.setProperty(
+                "group",
+                arm_group_);
+
+            task.setProperty(
+                "ik_frame",
+                end_effector_frame_);
+
+            mtc::Stage* current_state_ptr = nullptr;
+
+            //保存当前机器人状态的stage
+            {
+                auto current_state =
+                    std::make_unique<
+                        mtc::stages::CurrentState>(
+                        "current state");
+
+                current_state_ptr =
+                    current_state.get();
+
+                task.add(
+                    std::move(current_state));
+            }
+
+            // 当前状态到预接近状态使用 MoveIt planning pipeline。
+            auto sampling_planner =
+                std::make_shared<
+                    mtc::solvers::PipelinePlanner>(
+                    shared_from_this());
+
+            // 预接近状态到接触状态：使用笛卡尔直线规划。
+            auto cartesian_planner =
+                std::make_shared<
+                    mtc::solvers::CartesianPath>();
+
+            cartesian_planner->
+                setMaxVelocityScalingFactor(
+                    max_velocity_scaling_);
+
+            cartesian_planner->
+                setMaxAccelerationScalingFactor(
+                    max_acceleration_scaling_);
+
+            cartesian_planner->setStepSize(
+                cartesian_step_m_);
+
+            //当前状态链接到接近状态
+            {
+                auto connect = std::make_unique<mtc::stages::Connect>("move to pre-approach", mtc::stages::Connect::GroupPlannerVector{{arm_group_,sampling_planner}});
+                connect->setTimeout(
+                    connect_timeout_sec_);
+                connect->properties().
+                         configureInitFrom(
+                             mtc::Stage::PARENT);
+                task.add(
+                    std::move(connect));
+            }
+
+            //接近并且附着
+            {
+                auto approach_and_attach =
+                    std::make_unique<
+                        mtc::SerialContainer>(
+                        "approach and attach");
+
+                task.properties().exposeTo(
+                    approach_and_attach->properties(),
+                    {
+                        "group",
+                        "ik_frame"
+                    });
+
+                approach_and_attach->properties().
+                                     configureInitFrom(
+                                         mtc::Stage::PARENT,
+                                         {
+                                             "group",
+                                             "ik_frame"
+                                         });
+
+                //从预接近状态直线移动到接触状态
+                {
+                    auto approach = std::make_unique<mtc::stages::MoveRelative>("radial approach",cartesian_planner);
+
+                    approach->properties().set(
+                        "marker_ns",
+                        "radial_approach");
+
+                    approach->properties().set(
+                        "link",
+                        end_effector_frame_);
+
+                    approach->properties().
+                              configureInitFrom(
+                                  mtc::Stage::PARENT,
+                                  {"group"});
+
+                    approach->setMinMaxDistance(approach_min_m_, approach_max_m_);
+
+                    geometry_msgs::msg::Vector3Stamped direction;
+
+                     // 所有候选姿态都让 end_effect_link 的 +X
+                     // 指向圆柱中心。
+                     //
+                     // 因此不论从圆柱哪一侧抓，
+                     // 沿末端局部 +X 都是向圆柱中心接近。
+                    direction.header.frame_id = end_effector_frame_;
+                    direction.vector.x = 1.0;
+                    direction.vector.y = 0.0;
+                    direction.vector.z = 0.0;
+
+                    approach->setDirection(
+                        direction);
+
+                    approach_and_attach->insert(
+                        std::move(approach));
+                }
+
+                //生成多个侧面姿态候选
+                {
+                    auto alternatives =
+                        std::make_unique<
+                            mtc::Alternatives>(
+                            "side approach candidates");
+
+                    approach_and_attach->
+                        properties().exposeTo(
+                            alternatives->properties(),
+                            {
+                                "group",
+                                "ik_frame"
+                            });
+
+                    alternatives->properties().
+                                  configureInitFrom(
+                                      mtc::Stage::PARENT,
+                                      {
+                                          "group",
+                                          "ik_frame"
+                                      });
+
+                    for (int azimuth_index = 0; azimuth_index < side_grasp_azimuth_samples_; ++azimuth_index)
+                    {
+                        const double azimuth = 2.0 * kPi *static_cast<double>(azimuth_index) / static_cast<double>(side_grasp_azimuth_samples_);
+
+                        for (int roll_index = 0; roll_index < side_grasp_roll_samples_; ++roll_index)
+                        {
+                            const double roll = 2.0 * kPi * static_cast<double>(roll_index) / static_cast<double>(side_grasp_roll_samples_);
+                            const double azimuth_deg = azimuth * 180.0 / kPi;
+
+                            const double roll_deg = roll * 180.0 / kPi;
+
+                            std::ostringstream name;
+
+                            name << "side " << static_cast<int>(std::round(azimuth_deg)) << " deg, roll " << static_cast<int>(std::round(roll_deg)) << " deg";
+
+
+                            // GeneratePose 只生成一个
+                            // end_effect_link 目标位姿。
+
+                            auto pose_generator =
+                                std::make_unique<
+                                    mtc::stages::GeneratePose>(
+                                    name.str());
+
+                            pose_generator->properties().
+                                            configureInitFrom(
+                                                mtc::Stage::PARENT);
+
+                            pose_generator->properties().set(
+                                "marker_ns",
+                                "side_grasp_candidates");
+
+                            pose_generator->setPose(
+                                makeSideGraspPose(
+                                    object_pose,
+                                    azimuth,
+                                    roll));
+
+                            pose_generator->setMonitoredStage(current_state_ptr);
+
+                            // 将目标笛卡尔 Pose
+                            // 转换为机械臂关节状态。
+                            auto compute_ik =
+                                std::make_unique<
+                                    mtc::stages::ComputeIK>(
+                                    name.str() + " IK",
+                                    std::move(
+                                        pose_generator));
+
+                            compute_ik->
+                                setMaxIKSolutions(
+                                    static_cast<std::size_t>(
+                                        max_ik_solutions_));
+
+                            compute_ik->
+                                setMinSolutionDistance(
+                                    min_ik_solution_distance_);
+
+                            compute_ik->setIKFrame(
+                                end_effector_frame_);
+
+                            compute_ik->properties().
+                                        configureInitFrom(
+                                            mtc::Stage::PARENT,
+                                            {"group"});
+
+                            compute_ik->properties().
+                                        configureInitFrom(
+                                            mtc::Stage::INTERFACE,
+                                            {"target_pose"});
+
+                            alternatives->add(
+                                std::move(compute_ik));
+                        }
+                    }
+
+                    approach_and_attach->insert(
+                        std::move(alternatives));
+                }
+
+                //允许末端和目标物体接触
+                {
+                    auto allow_collision =
+                        std::make_unique<
+                            mtc::stages::
+                            ModifyPlanningScene>(
+                            "allow target contact");
+
+                    allow_collision->allowCollisions(
+                        object_id_,
+                        touch_links_,
+                        true);
+
+                    approach_and_attach->insert(
+                        std::move(allow_collision));
+                }
+
+                /*
+                 * --------------------------------------------
+                 * 3.4 虚拟附着
+                 * --------------------------------------------
+                 */
+                {
+                    auto attach =
+                        std::make_unique<
+                            mtc::stages::
+                            ModifyPlanningScene>(
+                            "attach target object");
+
+                    attach->attachObject(
+                        object_id_,
+                        end_effector_frame_);
+
+                    approach_and_attach->insert(
+                        std::move(attach));
+                }
+
+                task.add(
+                    std::move(
+                        approach_and_attach));
+            }
+
+            return task;
+        }
+
         mtc::Task createTask(const geometry_msgs::msg::Pose& object_pose,
                              const geometry_msgs::msg::Pose& place_object_pose)
         {
@@ -736,7 +1159,7 @@ namespace rm_vision_pick_place
 
                     geometry_msgs::msg::Vector3Stamped direction;
                     direction.header.frame_id = planning_frame_;
-                    direction.vector.z = -1.0;
+                    direction.vector.x = -1.0;
                     stage->setDirection(direction);
                     pick->insert(std::move(stage));
                 }
@@ -932,6 +1355,12 @@ namespace rm_vision_pick_place
         double stable_position_threshold_m_{0.008};
         double stable_angle_threshold_deg_{4.0};
         double tf_timeout_sec_{0.30};
+
+        int side_grasp_azimuth_samples_{8};
+        int side_grasp_roll_samples_{4};
+
+        double side_grasp_radius_m_{0.055};
+        double side_grasp_height_offset_m_{0.0};
 
         std::string object_id_;
         double object_height_m_{0.150};
