@@ -1,4 +1,5 @@
 #include <sstream>
+#include <stdexcept>
 //ROS2
 #include <rclcpp/rclcpp.hpp>
 //moveit2
@@ -154,6 +155,47 @@ mtc::Task MTCTaskNode::createTask()
     task.loadRobotModel(node_);
 
     const std::string arm_group_name = "rm_robot_arm";
+
+    // 在生成大量 IK 错误前，先一次性检查 MTC 节点是否加载了运动学插件。
+    const auto robot_model = task.getRobotModel();
+    const auto* joint_model_group =
+        robot_model->getJointModelGroup(arm_group_name);
+
+    if (joint_model_group == nullptr)
+    {
+        throw std::runtime_error(
+            "JointModelGroup not found: " + arm_group_name);
+    }
+
+    const auto solver = joint_model_group->getSolverInstance();
+
+    RCLCPP_INFO(
+        LOGGER,
+        "IK diagnosis: model_frame=%s group=%s is_chain=%d variables=%zu solver=%s",
+        robot_model->getModelFrame().c_str(),
+        arm_group_name.c_str(),
+        static_cast<int>(joint_model_group->isChain()),
+        joint_model_group->getVariableCount(),
+        solver ? "loaded" : "NOT_LOADED");
+
+    if (!solver)
+    {
+        throw std::runtime_error(
+            "No IK solver loaded for group '" + arm_group_name +
+            "'. Start this executable with pick_place_demo.launch.py, "
+            "not ros2 run.");
+    }
+
+    RCLCPP_INFO(
+        LOGGER,
+        "IK solver: base=%s group=%s",
+        solver->getBaseFrame().c_str(),
+        solver->getGroupName().c_str());
+
+    for (const auto& tip : solver->getTipFrames())
+    {
+        RCLCPP_INFO(LOGGER, "IK solver tip: %s", tip.c_str());
+    }
     const std::string end_effector_frame = "end_effect_link";
     const std::string world_frame = "world";
     const std::string object_id = "object";
@@ -298,6 +340,8 @@ mtc::Task MTCTaskNode::createTask()
                     mtc::stages::ComputeIK>(
                     "attach pose IK",
                     std::move(generator));
+
+            wrapper->setTimeout(0.2);
 
             wrapper->setMaxIKSolutions(16);
 
@@ -537,6 +581,8 @@ mtc::Task MTCTaskNode::createTask()
                     mtc::stages::ComputeIK>(
                     "place pose IK",
                     std::move(generator));
+
+            wrapper->setTimeout(0.2);
 
             wrapper->setMaxIKSolutions(16);
 

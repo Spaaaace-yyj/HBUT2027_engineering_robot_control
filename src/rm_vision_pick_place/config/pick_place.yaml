@@ -1,10 +1,12 @@
 vision_pick_place:
   ros__parameters:
+    # ---------------- Robot / MoveIt ----------------
     arm_group: rm_robot_arm
     planning_frame: world
     end_effector_frame: end_effect_link
     touch_links: [link6, end_effect_link]
 
+    # ---------------- FoundationPose ----------------
     foundation_pose_topic: /foundationpose/pose
     foundation_state_topic: /foundationpose/state
     foundation_status_topic: /foundationpose/status
@@ -18,34 +20,38 @@ vision_pick_place:
     stable_angle_threshold_deg: 4.0
     tf_timeout_sec: 0.30
 
+    # ---------------- Target collision geometry ----------------
     object_id: target_object
     object_height_m: 0.150
     object_radius_m: 0.048
 
-    # object_T_end_effect_link，必须根据 RViz 中实际抓取方向调整
-    object_to_tool_xyz: [0.0, 0.0, 0.0]
-    object_to_tool_rpy: [0.0, 0.0, 0.0]
+    # FoundationPose mesh frame -> canonical cylinder frame.
+    # The canonical cylinder frame uses +Z as the cylinder axis.
+    # The previous code hard-coded Rx(+90 deg) only for the collision object;
+    # now grasp generation and collision geometry use this same transform.
+    object_to_cylinder_xyz: [0.0, 0.1, 0.0]
+    object_to_cylinder_rpy: [1.57079632679, 0.0, 0.0]
 
-    # 物体最终位姿，不是末端位姿
-    place_xyz: [0.35, 0.25, 0.25]
-    place_rpy: [0.0, 0.0, 0.0]
-
-    max_velocity_scaling: 0.20
-    max_acceleration_scaling: 0.20
-    cartesian_step_m: 0.005
-    connect_timeout_sec: 10.0
-    max_ik_solutions: 16
-    min_ik_solution_distance: 0.10
-    max_task_solutions: 1
+    # ---------------- Side approach candidates ----------------
+    # Current convention: end_effect_link +X points toward the cylinder center.
+    # Start conservatively on the real robot; increase after RViz verification.
+    side_grasp_azimuth_samples: 4
+    side_grasp_roll_samples: 1
+    side_grasp_radius_m: 0.080
+    side_grasp_height_offset_m: 0.0
 
     approach_min_m: 0.05
     approach_max_m: 0.10
-    lift_min_m: 0.10
-    lift_max_m: 0.15
-    lower_min_m: 0.05
-    lower_max_m: 0.10
-    retreat_min_m: 0.05
-    retreat_max_m: 0.10
 
-    # 第一轮必须 false，只规划并在 RViz 检查
-    auto_execute: false
+    # ---------------- Planning ----------------
+    max_velocity_scaling: 0.05
+    max_acceleration_scaling: 0.05
+    cartesian_step_m: 0.005
+    connect_timeout_sec: 10.0
+    ik_timeout_sec: 0.20
+    max_ik_solutions: 8
+    min_ik_solution_distance: 0.10
+    max_task_solutions: 1
+
+    # The launch argument auto_execute overrides this value.
+    auto_execute: true

@@ -104,6 +104,42 @@ namespace rm_vision_pick_place
         }
 
     private:
+        template <typename T>
+        T declareOrGetParameter(
+            const std::string& name,
+            const T& default_value)
+        {
+            /*
+             * ros2 launch + automatically_declare_parameters_from_overrides(true)
+             * 时，参数可能已经由 launch/YAML 自动声明。
+             *
+             * ros2 run 时，参数可能不存在，此时再声明默认值。
+             */
+
+            if (!has_parameter(name))
+            {
+                return declare_parameter<T>(
+                    name,
+                    default_value);
+            }
+
+            try
+            {
+                /*
+                 * ParameterValue 对整数、浮点数、字符串、
+                 * bool 和数组都支持模板读取。
+                 */
+                return get_parameter(name).get_value<T>();
+            }
+            catch (const rclcpp::ParameterTypeException& error)
+            {
+                throw std::runtime_error(
+                    "Parameter '" + name +
+                    "' has wrong type: " +
+                    error.what());
+            }
+        }
+
         enum class PipelineState : std::uint8_t
         {
             IDLE = 0,
@@ -122,87 +158,93 @@ namespace rm_vision_pick_place
         void declareAndReadParameters()
         {
             //moveit规划组
-            arm_group_ = declare_parameter<std::string>("arm_group", "rm_robot_arm");
+            arm_group_ = declareOrGetParameter<std::string>("arm_group", "rm_robot_arm");
             //moveit规划坐标系
-            planning_frame_ = declare_parameter<std::string>("planning_frame", "world");
+            planning_frame_ = declareOrGetParameter<std::string>("planning_frame", "world");
             //末端坐标系
             end_effector_frame_ =
-                declare_parameter<std::string>("end_effector_frame", "end_effect_link");
+                declareOrGetParameter<std::string>("end_effector_frame", "end_effect_link");
             //触碰坐标系
-            touch_links_ = declare_parameter<std::vector<std::string>>(
+            touch_links_ = declareOrGetParameter<std::vector<std::string>>(
                 "touch_links", std::vector<std::string>{"link6", "end_effect_link"});
 
             //foundationpose_bridge输出的话题/服务名字
-            foundation_pose_topic_ = declare_parameter<std::string>(
+            foundation_pose_topic_ = declareOrGetParameter<std::string>(
                 "foundation_pose_topic", "/foundationpose/pose");
-            foundation_state_topic_ = declare_parameter<std::string>(
+            foundation_state_topic_ = declareOrGetParameter<std::string>(
                 "foundation_state_topic", "/foundationpose/state");
-            foundation_status_topic_ = declare_parameter<std::string>(
+            foundation_status_topic_ = declareOrGetParameter<std::string>(
                 "foundation_status_topic", "/foundationpose/status");
-            foundation_enable_service_ = declare_parameter<std::string>(
+            foundation_enable_service_ = declareOrGetParameter<std::string>(
                 "foundation_enable_service", "/foundationpose/set_enabled");
-            foundation_reinitialize_service_ = declare_parameter<std::string>(
+            foundation_reinitialize_service_ = declareOrGetParameter<std::string>(
                 "foundation_reinitialize_service", "/foundationpose/reinitialize");
-            foundation_tracking_state_ = declare_parameter<int>("foundation_tracking_state", 4);
+            foundation_tracking_state_ = declareOrGetParameter<int>("foundation_tracking_state", 4);
 
-            pose_wait_timeout_sec_ = declare_parameter<double>("pose_wait_timeout_sec", 15.0);
-            stable_sample_count_ = declare_parameter<int>("stable_sample_count", 10);
+            pose_wait_timeout_sec_ = declareOrGetParameter<double>("pose_wait_timeout_sec", 15.0);
+            stable_sample_count_ = declareOrGetParameter<int>("stable_sample_count", 10);
             stable_position_threshold_m_ =
-                declare_parameter<double>("stable_position_threshold_m", 0.008);
+                declareOrGetParameter<double>("stable_position_threshold_m", 0.008);
             stable_angle_threshold_deg_ =
-                declare_parameter<double>("stable_angle_threshold_deg", 4.0);
-            tf_timeout_sec_ = declare_parameter<double>("tf_timeout_sec", 0.30);
+                declareOrGetParameter<double>("stable_angle_threshold_deg", 4.0);
+            tf_timeout_sec_ = declareOrGetParameter<double>("tf_timeout_sec", 0.30);
 
-            object_id_ = declare_parameter<std::string>("object_id", "target_object");
-            object_height_m_ = declare_parameter<double>("object_height_m", 0.150);
-            object_radius_m_ = declare_parameter<double>("object_radius_m", 0.048);
+            object_id_ = declareOrGetParameter<std::string>("object_id", "target_object");
+            object_height_m_ = declareOrGetParameter<double>("object_height_m", 0.150);
+            object_radius_m_ = declareOrGetParameter<double>("object_radius_m", 0.048);
 
-            object_to_tool_xyz_ = declare_parameter<std::vector<double>>(
+            object_to_cylinder_xyz_ = declareOrGetParameter<std::vector<double>>(
+                "object_to_cylinder_xyz", std::vector<double>{0.0, 0.0, 0.0});
+            object_to_cylinder_rpy_ = declareOrGetParameter<std::vector<double>>(
+                "object_to_cylinder_rpy", std::vector<double>{1.57079632679, 0.0, 0.0});
+
+            object_to_tool_xyz_ = declareOrGetParameter<std::vector<double>>(
                 "object_to_tool_xyz", std::vector<double>{0.0, 0.0, 0.0});
-            object_to_tool_rpy_ = declare_parameter<std::vector<double>>(
+            object_to_tool_rpy_ = declareOrGetParameter<std::vector<double>>(
                 "object_to_tool_rpy", std::vector<double>{0.0, 0.0, 0.0});
-            place_xyz_ = declare_parameter<std::vector<double>>(
+            place_xyz_ = declareOrGetParameter<std::vector<double>>(
                 "place_xyz", std::vector<double>{0.35, 0.25, 0.25});
-            place_rpy_ = declare_parameter<std::vector<double>>(
+            place_rpy_ = declareOrGetParameter<std::vector<double>>(
                 "place_rpy", std::vector<double>{0.0, 0.0, 0.0});
 
-            max_velocity_scaling_ = declare_parameter<double>("max_velocity_scaling", 0.20);
-            max_acceleration_scaling_ = declare_parameter<double>("max_acceleration_scaling", 0.20);
-            cartesian_step_m_ = declare_parameter<double>("cartesian_step_m", 0.005);
-            connect_timeout_sec_ = declare_parameter<double>("connect_timeout_sec", 10.0);
-            max_ik_solutions_ = declare_parameter<int>("max_ik_solutions", 16);
+            max_velocity_scaling_ = declareOrGetParameter<double>("max_velocity_scaling", 0.20);
+            max_acceleration_scaling_ = declareOrGetParameter<double>("max_acceleration_scaling", 0.20);
+            cartesian_step_m_ = declareOrGetParameter<double>("cartesian_step_m", 0.005);
+            connect_timeout_sec_ = declareOrGetParameter<double>("connect_timeout_sec", 10.0);
+            ik_timeout_sec_ = declareOrGetParameter<double>("ik_timeout_sec", 0.20);
+            max_ik_solutions_ = declareOrGetParameter<int>("max_ik_solutions", 8);
             min_ik_solution_distance_ =
-                declare_parameter<double>("min_ik_solution_distance", 0.10);
-            max_task_solutions_ = declare_parameter<int>("max_task_solutions", 1);
+                declareOrGetParameter<double>("min_ik_solution_distance", 0.10);
+            max_task_solutions_ = declareOrGetParameter<int>("max_task_solutions", 1);
 
-            approach_min_m_ = declare_parameter<double>("approach_min_m", 0.05);
-            approach_max_m_ = declare_parameter<double>("approach_max_m", 0.10);
-            lift_min_m_ = declare_parameter<double>("lift_min_m", 0.10);
-            lift_max_m_ = declare_parameter<double>("lift_max_m", 0.15);
-            lower_min_m_ = declare_parameter<double>("lower_min_m", 0.05);
-            lower_max_m_ = declare_parameter<double>("lower_max_m", 0.10);
-            retreat_min_m_ = declare_parameter<double>("retreat_min_m", 0.05);
-            retreat_max_m_ = declare_parameter<double>("retreat_max_m", 0.10);
+            approach_min_m_ = declareOrGetParameter<double>("approach_min_m", 0.05);
+            approach_max_m_ = declareOrGetParameter<double>("approach_max_m", 0.10);
+            lift_min_m_ = declareOrGetParameter<double>("lift_min_m", 0.10);
+            lift_max_m_ = declareOrGetParameter<double>("lift_max_m", 0.15);
+            lower_min_m_ = declareOrGetParameter<double>("lower_min_m", 0.05);
+            lower_max_m_ = declareOrGetParameter<double>("lower_max_m", 0.10);
+            retreat_min_m_ = declareOrGetParameter<double>("retreat_min_m", 0.05);
+            retreat_max_m_ = declareOrGetParameter<double>("retreat_max_m", 0.10);
 
-            auto_execute_ = declare_parameter<bool>("auto_execute", false);
+            auto_execute_ = declareOrGetParameter<bool>("auto_execute", true);
 
             side_grasp_azimuth_samples_ =
-                declare_parameter<int>(
+                declareOrGetParameter<int>(
                     "side_grasp_azimuth_samples",
-                    8);
-
-            side_grasp_roll_samples_ =
-                declare_parameter<int>(
-                    "side_grasp_roll_samples",
                     4);
 
+            side_grasp_roll_samples_ =
+                declareOrGetParameter<int>(
+                    "side_grasp_roll_samples",
+                    1);
+
             side_grasp_radius_m_ =
-                declare_parameter<double>(
+                declareOrGetParameter<double>(
                     "side_grasp_radius_m",
-                    0.055);
+                    0.080);
 
             side_grasp_height_offset_m_ =
-                declare_parameter<double>(
+                declareOrGetParameter<double>(
                     "side_grasp_height_offset_m",
                     0.0);
         }
@@ -216,6 +258,8 @@ namespace rm_vision_pick_place
                     throw std::invalid_argument(std::string(name) + " must have exactly 3 values");
                 }
             };
+            require3(object_to_cylinder_xyz_, "object_to_cylinder_xyz");
+            require3(object_to_cylinder_rpy_, "object_to_cylinder_rpy");
             require3(object_to_tool_xyz_, "object_to_tool_xyz");
             require3(object_to_tool_rpy_, "object_to_tool_rpy");
             require3(place_xyz_, "place_xyz");
@@ -234,6 +278,11 @@ namespace rm_vision_pick_place
             if (object_height_m_ <= 0.0 || object_radius_m_ <= 0.0)
             {
                 throw std::invalid_argument("object dimensions must be positive");
+            }
+            if (side_grasp_azimuth_samples_ <= 0 || side_grasp_roll_samples_ <= 0 ||
+                side_grasp_radius_m_ <= 0.0 || ik_timeout_sec_ <= 0.0)
+            {
+                throw std::invalid_argument("side grasp / IK parameters are invalid");
             }
         }
 
@@ -275,6 +324,23 @@ namespace rm_vision_pick_place
 
             response->success = true;
             response->message = "pipeline accepted";
+        }
+
+        tf2::Transform makeObjectToCylinderTransform() const
+        {
+            tf2::Quaternion rotation;
+            rotation.setRPY(
+                object_to_cylinder_rpy_[0],
+                object_to_cylinder_rpy_[1],
+                object_to_cylinder_rpy_[2]);
+            rotation.normalize();
+
+            return tf2::Transform(
+                rotation,
+                tf2::Vector3(
+                    object_to_cylinder_xyz_[0],
+                    object_to_cylinder_xyz_[1],
+                    object_to_cylinder_xyz_[2]));
         }
 
         geometry_msgs::msg::PoseStamped makeSideGraspPose(
@@ -369,22 +435,22 @@ namespace rm_vision_pick_place
 
             object_to_tool_rotation.normalize();
 
-            const tf2::Transform object_to_tool(
+            // This pose is expressed in the canonical cylinder frame C.
+            const tf2::Transform cylinder_to_tool(
                 object_to_tool_rotation,
                 position_in_object);
 
             /*
              * planning_T_tool =
-             * planning_T_object × object_T_tool
+             * planning_T_object × object_T_cylinder × cylinder_T_tool
              */
             tf2::Transform planning_to_object;
-            tf2::fromMsg(
-                object_pose,
-                planning_to_object);
+            tf2::fromMsg(object_pose, planning_to_object);
 
             const tf2::Transform planning_to_tool =
                 planning_to_object *
-                object_to_tool;
+                makeObjectToCylinderTransform() *
+                cylinder_to_tool;
 
             geometry_msgs::msg::PoseStamped result;
 
@@ -417,6 +483,7 @@ namespace rm_vision_pick_place
 
                 publishPipelineState(PipelineState::REINITIALIZING,
                                      "requesting FoundationPose reinitialization");
+                //重定位foundationpose
                 if (!callFoundationReinitialize())
                 {
                     finishFailure("FoundationPose reinitialize service failed");
@@ -425,6 +492,7 @@ namespace rm_vision_pick_place
 
                 publishPipelineState(PipelineState::WAITING_STABLE_POSE,
                                      "waiting for stable object pose");
+                //求平均物体位姿，并固定下frozen_pose
                 geometry_msgs::msg::PoseStamped frozen_pose;
                 if (!waitForStablePose(minimum_sequence, frozen_pose))
                 {
@@ -443,12 +511,14 @@ namespace rm_vision_pick_place
 
                 publishPipelineState(PipelineState::UPDATING_SCENE,
                                      "adding target CollisionObject");
+                //将抓取物体加入环境
                 if (!applyTargetCollisionObject(frozen_pose.pose))
                 {
                     finishFailure("failed to add CollisionObject");
                     return;
                 }
 
+                //构造任务
                 publishPipelineState(PipelineState::BUILDING_TASK, "building MTC task");
                 // task_ = createTask(frozen_pose.pose, makePlaceObjectPose());
                 task_ = createApproachAttachTask(frozen_pose.pose);
@@ -464,6 +534,7 @@ namespace rm_vision_pick_place
                     return;
                 }
 
+                //规划，执行
                 publishPipelineState(PipelineState::PLANNING, "planning MTC task");
                 const auto planned = task_.plan(static_cast<std::size_t>(max_task_solutions_));
 
@@ -759,7 +830,13 @@ namespace rm_vision_pick_place
             object.primitives.resize(1);
             object.primitives[0].type = shape_msgs::msg::SolidPrimitive::CYLINDER;
             object.primitives[0].dimensions = {object_height_m_, object_radius_m_};
-            object.pose = object_pose;
+
+            tf2::Transform planning_to_object;
+            tf2::fromMsg(object_pose, planning_to_object);
+            const tf2::Transform planning_to_cylinder =
+                planning_to_object * makeObjectToCylinderTransform();
+
+            tf2::toMsg(planning_to_cylinder, object.pose);
             object.operation = moveit_msgs::msg::CollisionObject::ADD;
 
             const bool success = planning_scene_interface_.applyCollisionObject(object);
@@ -836,6 +913,72 @@ namespace rm_vision_pick_place
 
             task.loadRobotModel(shared_from_this());
 
+            const auto robot_model =
+                task.getRobotModel();
+
+            const auto* joint_model_group = robot_model->getJointModelGroup(arm_group_);
+
+            if (joint_model_group == nullptr)
+            {
+                throw std::runtime_error(
+                    "JointModelGroup not found: " +
+                    arm_group_);
+            }
+
+            const auto solver =
+                joint_model_group->getSolverInstance();
+
+            RCLCPP_INFO(
+                get_logger(),
+                "IK diagnosis: model_frame=%s, group=%s, "
+                "is_chain=%d, variables=%u, solver=%s, "
+                "ik_frame_exists=%d, can_set_ik_for_frame=%d, "
+                "default_timeout=%.6f",
+                robot_model->getModelFrame().c_str(),
+                arm_group_.c_str(),
+                static_cast<int>(joint_model_group->isChain()),
+                joint_model_group->getVariableCount(),
+                solver ? "loaded" : "NOT LOADED",
+                static_cast<int>(
+                    robot_model->hasLinkModel(
+                        end_effector_frame_)),
+                static_cast<int>(
+                    joint_model_group->canSetStateFromIK(
+                        end_effector_frame_)),
+                joint_model_group->getDefaultIKTimeout());
+
+            if (!solver)
+            {
+                throw std::runtime_error(
+                    "No IK solver loaded for group '" + arm_group_ +
+                    "'. Start this node with vision_pick_place.launch.py so "
+                    "robot_description_kinematics is loaded.");
+            }
+
+            if (!joint_model_group->canSetStateFromIK(end_effector_frame_))
+            {
+                throw std::runtime_error(
+                    "IK cannot be solved for frame '" + end_effector_frame_ + "'.");
+            }
+
+            if (solver)
+            {
+                RCLCPP_INFO(
+                    get_logger(),
+                    "IK solver: base=%s, group=%s",
+                    solver->getBaseFrame().c_str(),
+                    solver->getGroupName().c_str());
+
+                for (const auto& tip :
+                     solver->getTipFrames())
+                {
+                    RCLCPP_INFO(
+                        get_logger(),
+                        "IK solver tip: %s",
+                        tip.c_str());
+                }
+            }
+
             /*
              * rm_robot_arm 是真正进行 IK 和运动规划的组。
              *
@@ -851,6 +994,7 @@ namespace rm_vision_pick_place
                 end_effector_frame_);
 
             mtc::Stage* current_state_ptr = nullptr;
+            mtc::Stage* collision_allowed_state_ptr = nullptr;
 
             //保存当前机器人状态的stage
             {
@@ -864,6 +1008,23 @@ namespace rm_vision_pick_place
 
                 task.add(
                     std::move(current_state));
+            }
+
+            {
+                auto stage =
+                    std::make_unique<
+                        mtc::stages::ModifyPlanningScene>(
+                        "allow target contact before IK");
+
+                stage->allowCollisions(
+                    object_id_,
+                    touch_links_,
+                    true);
+
+                collision_allowed_state_ptr =
+                    stage.get();
+
+                task.add(std::move(stage));
             }
 
             // 当前状态到预接近状态使用 MoveIt planning pipeline。
@@ -890,7 +1051,10 @@ namespace rm_vision_pick_place
 
             //当前状态链接到接近状态
             {
-                auto connect = std::make_unique<mtc::stages::Connect>("move to pre-approach", mtc::stages::Connect::GroupPlannerVector{{arm_group_,sampling_planner}});
+                auto connect = std::make_unique<mtc::stages::Connect>("move to pre-approach",
+                                                                      mtc::stages::Connect::GroupPlannerVector{
+                                                                          {arm_group_, sampling_planner}
+                                                                      });
                 connect->setTimeout(
                     connect_timeout_sec_);
                 connect->properties().
@@ -924,7 +1088,7 @@ namespace rm_vision_pick_place
 
                 //从预接近状态直线移动到接触状态
                 {
-                    auto approach = std::make_unique<mtc::stages::MoveRelative>("radial approach",cartesian_planner);
+                    auto approach = std::make_unique<mtc::stages::MoveRelative>("radial approach", cartesian_planner);
 
                     approach->properties().set(
                         "marker_ns",
@@ -943,11 +1107,11 @@ namespace rm_vision_pick_place
 
                     geometry_msgs::msg::Vector3Stamped direction;
 
-                     // 所有候选姿态都让 end_effect_link 的 +X
-                     // 指向圆柱中心。
-                     //
-                     // 因此不论从圆柱哪一侧抓，
-                     // 沿末端局部 +X 都是向圆柱中心接近。
+                    // 所有候选姿态都让 end_effect_link 的 +X
+                    // 指向圆柱中心。
+                    //
+                    // 因此不论从圆柱哪一侧抓，
+                    // 沿末端局部 +X 都是向圆柱中心接近。
                     direction.header.frame_id = end_effector_frame_;
                     direction.vector.x = 1.0;
                     direction.vector.y = 0.0;
@@ -985,18 +1149,21 @@ namespace rm_vision_pick_place
 
                     for (int azimuth_index = 0; azimuth_index < side_grasp_azimuth_samples_; ++azimuth_index)
                     {
-                        const double azimuth = 2.0 * kPi *static_cast<double>(azimuth_index) / static_cast<double>(side_grasp_azimuth_samples_);
+                        const double azimuth = 2.0 * kPi * static_cast<double>(azimuth_index) / static_cast<double>(
+                            side_grasp_azimuth_samples_);
 
                         for (int roll_index = 0; roll_index < side_grasp_roll_samples_; ++roll_index)
                         {
-                            const double roll = 2.0 * kPi * static_cast<double>(roll_index) / static_cast<double>(side_grasp_roll_samples_);
+                            const double roll = 2.0 * kPi * static_cast<double>(roll_index) / static_cast<double>(
+                                side_grasp_roll_samples_);
                             const double azimuth_deg = azimuth * 180.0 / kPi;
 
                             const double roll_deg = roll * 180.0 / kPi;
 
                             std::ostringstream name;
 
-                            name << "side " << static_cast<int>(std::round(azimuth_deg)) << " deg, roll " << static_cast<int>(std::round(roll_deg)) << " deg";
+                            name << "side " << static_cast<int>(std::round(azimuth_deg)) << " deg, roll " << static_cast
+                                <int>(std::round(roll_deg)) << " deg";
 
 
                             // GeneratePose 只生成一个
@@ -1015,13 +1182,27 @@ namespace rm_vision_pick_place
                                 "marker_ns",
                                 "side_grasp_candidates");
 
-                            pose_generator->setPose(
-                                makeSideGraspPose(
-                                    object_pose,
-                                    azimuth,
-                                    roll));
+                            const auto candidate_pose = makeSideGraspPose(
+                                object_pose, azimuth, roll);
 
-                            pose_generator->setMonitoredStage(current_state_ptr);
+                            if (azimuth_index == 0 && roll_index == 0)
+                            {
+                                RCLCPP_INFO(
+                                    get_logger(),
+                                    "First side candidate: frame=%s xyz=[%.4f %.4f %.4f] "
+                                    "q=[%.4f %.4f %.4f %.4f]",
+                                    candidate_pose.header.frame_id.c_str(),
+                                    candidate_pose.pose.position.x,
+                                    candidate_pose.pose.position.y,
+                                    candidate_pose.pose.position.z,
+                                    candidate_pose.pose.orientation.x,
+                                    candidate_pose.pose.orientation.y,
+                                    candidate_pose.pose.orientation.z,
+                                    candidate_pose.pose.orientation.w);
+                            }
+
+                            pose_generator->setPose(candidate_pose);
+                            pose_generator->setMonitoredStage(collision_allowed_state_ptr);
 
                             // 将目标笛卡尔 Pose
                             // 转换为机械臂关节状态。
@@ -1036,6 +1217,7 @@ namespace rm_vision_pick_place
                                 setMaxIKSolutions(
                                     static_cast<std::size_t>(
                                         max_ik_solutions_));
+                            compute_ik->setTimeout(ik_timeout_sec_);
 
                             compute_ik->
                                 setMinSolutionDistance(
@@ -1080,11 +1262,7 @@ namespace rm_vision_pick_place
                         std::move(allow_collision));
                 }
 
-                /*
-                 * --------------------------------------------
-                 * 3.4 虚拟附着
-                 * --------------------------------------------
-                 */
+                // 虚拟附着
                 {
                     auto attach =
                         std::make_unique<
@@ -1356,25 +1534,28 @@ namespace rm_vision_pick_place
         double stable_angle_threshold_deg_{4.0};
         double tf_timeout_sec_{0.30};
 
-        int side_grasp_azimuth_samples_{8};
-        int side_grasp_roll_samples_{4};
+        int side_grasp_azimuth_samples_{4};
+        int side_grasp_roll_samples_{1};
 
-        double side_grasp_radius_m_{0.055};
+        double side_grasp_radius_m_{0.080};
         double side_grasp_height_offset_m_{0.0};
 
         std::string object_id_;
         double object_height_m_{0.150};
         double object_radius_m_{0.048};
+        std::vector<double> object_to_cylinder_xyz_;
+        std::vector<double> object_to_cylinder_rpy_;
         std::vector<double> object_to_tool_xyz_;
         std::vector<double> object_to_tool_rpy_;
         std::vector<double> place_xyz_;
         std::vector<double> place_rpy_;
 
-        double max_velocity_scaling_{0.20};
-        double max_acceleration_scaling_{0.20};
+        double max_velocity_scaling_{0.05};
+        double max_acceleration_scaling_{0.05};
         double cartesian_step_m_{0.005};
         double connect_timeout_sec_{10.0};
-        int max_ik_solutions_{16};
+        double ik_timeout_sec_{0.20};
+        int max_ik_solutions_{8};
         double min_ik_solution_distance_{0.10};
         int max_task_solutions_{1};
 
@@ -1386,7 +1567,7 @@ namespace rm_vision_pick_place
         double lower_max_m_{0.10};
         double retreat_min_m_{0.05};
         double retreat_max_m_{0.10};
-        bool auto_execute_{false};
+        bool auto_execute_{true};
 
         std::unique_ptr<tf2_ros::Buffer> tf_buffer_;
         std::shared_ptr<tf2_ros::TransformListener> tf_listener_;
